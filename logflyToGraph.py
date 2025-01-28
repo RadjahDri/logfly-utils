@@ -13,6 +13,7 @@ GLIDER_SHEET_NAME = "Glider"
 DURATION_SHEET_NAME = "Duration"
 SITE_SHEET_NAME = "Site"
 COUNTRY_SHEET_NAME = "Country"
+TAG_SHEET_NAME = "Tag"
 
 class Fly:
 	def __init__(self, rawData):
@@ -22,6 +23,14 @@ class Fly:
 		self.gliderName = rawData[4]
 		self.siteName = rawData[2]
 		self.countryName = rawData[3]
+		self.tags = convertCommentToTags(rawData[5])
+
+
+def convertCommentToTags(comment):
+    if(not comment):
+        return []
+    return list(filter(lambda x: x != "", map(lambda x: x.split(" ")[0], comment.split("\n"))))
+
 
 
 def secondToTimeString(second):
@@ -45,7 +54,7 @@ def extractFlies(dbPath):
 	cur = db.cursor()
 
 	for year in years:
-		reqResult = db.execute("SELECT V_Date, V_Duree, V_Site, S_Pays, V_Engin FROM Vol INNER JOIN Site ON V_Site = S_Nom WHERE '%d' = SUBSTR(V_Date, 0, 5);" % year)
+		reqResult = db.execute("SELECT V_Date, V_Duree, V_Site, S_Pays, V_Engin, V_Commentaire FROM Vol INNER JOIN Site ON V_Site = S_Nom WHERE '%d' = SUBSTR(V_Date, 0, 5);" % year)
 		result[year] = list(map(lambda x: Fly(x), reqResult.fetchall()))
 
 	db.close()
@@ -65,6 +74,23 @@ def classifyGeneric(flies, classifyFunc):
 	return categorisedFlies
 
 
+def classifyArrayGeneric(flies, classifyFunc):
+	categorisedFlies = {}
+	
+	categorisedFlies["Total"] = {'Times':0, "Duration":0}
+
+	for fly in flies:
+		flyCategories = classifyFunc(fly)
+		for flyCategory in flyCategories:
+			if(not flyCategory in categorisedFlies):
+				categorisedFlies[flyCategory] = {'Times':0, "Duration":0}
+			categorisedFlies[flyCategory]['Times'] += 1
+			categorisedFlies[flyCategory]['Duration'] += fly.duration
+		categorisedFlies["Total"]['Times'] += 1
+		categorisedFlies["Total"]['Duration'] += fly.duration
+	return categorisedFlies
+
+
 def classifyByDurationCategories(flies):
 	return classifyGeneric(flies, lambda fly: fly.duration // TIME_CATEGORIES_STEP)
 
@@ -81,6 +107,10 @@ def classifyByCountry(flies):
 	return classifyGeneric(flies, lambda fly: fly.countryName)
 
 
+def classifyByTags(flies):
+	return classifyArrayGeneric(flies, lambda fly: fly.tags)
+
+
 def exportGenericToXls(categorisedFlies, xlsFile, sheetName):
 	sheet = xlsFile.add_worksheet(sheetName)
 	chartSheet = xlsFile.add_worksheet("%sChart" % sheetName)
@@ -93,7 +123,7 @@ def exportGenericToXls(categorisedFlies, xlsFile, sheetName):
 
 		sheet.write_row(rowIdx, 0, (year,))
 		rowIdx += 1
-		titles = ["Voile", "Nombre", "Temps"]
+		titles = ["", "Nombre", "Temps"]
 		sheet.write_row(rowIdx, 0, titles)
 		beginRow = rowIdx
 		rowIdx += 1
@@ -113,13 +143,13 @@ def exportGenericToXls(categorisedFlies, xlsFile, sheetName):
 				xl_rowcol_to_cell(endRow, 0, row_abs=True, col_abs=True)
 			),
 			'line':   {'none': True},
-    		'marker': {'type': 'automatic'},
+			'marker': {'type': 'automatic'},
 			'values': '=%s!%s:%s' % (
 				sheetName,
 				xl_rowcol_to_cell(beginRow+1, 1, row_abs=True, col_abs=True),
 				xl_rowcol_to_cell(endRow, 1, row_abs=True, col_abs=True)
 			),
-    		'data_labels': {'value': True},
+			'data_labels': {'value': True},
 		})
 		chart.add_series({
 			'name': '=%s!%s' % (sheetName, xl_rowcol_to_cell(beginRow, 2, row_abs=True, col_abs=True)),
@@ -133,7 +163,7 @@ def exportGenericToXls(categorisedFlies, xlsFile, sheetName):
 				xl_rowcol_to_cell(beginRow+1, 2, row_abs=True, col_abs=True),
 				xl_rowcol_to_cell(endRow, 2, row_abs=True, col_abs=True)
 			),
-    		'data_labels': {'value': True},
+			'data_labels': {'value': True},
 		})
 
 		sheet.autofit()
@@ -183,7 +213,7 @@ def exportDurationToXls(categorisedFlies, xlsFile):
 				xl_rowcol_to_cell(beginRow+1, 1, row_abs=True, col_abs=True),
 				xl_rowcol_to_cell(endRow, 1, row_abs=True, col_abs=True)
 			),
-    		'data_labels': {'value': True},
+			'data_labels': {'value': True},
 		})
 		chart.add_series({
 			'name': '=%s!%s' % (DURATION_SHEET_NAME, xl_rowcol_to_cell(beginRow, 2, row_abs=True, col_abs=True)),
@@ -197,8 +227,8 @@ def exportDurationToXls(categorisedFlies, xlsFile):
 				xl_rowcol_to_cell(beginRow+1, 2, row_abs=True, col_abs=True),
 				xl_rowcol_to_cell(endRow, 2, row_abs=True, col_abs=True)
 			),
-    		'data_labels': {'value': True},
-    		'y2_axis': True,
+			'data_labels': {'value': True},
+			'y2_axis': True,
 		})
 
 		sheet.autofit()
@@ -219,6 +249,10 @@ def exportCountryToXls(categorisedFlies, xlsFile):
 	exportGenericToXls(categorisedFlies, xlsFile, COUNTRY_SHEET_NAME)
 
 
+def exportTagToXls(categorisedFlies, xlsFile):
+	exportGenericToXls(categorisedFlies, xlsFile, TAG_SHEET_NAME)
+
+
 def argumentParsing():
 	parser = argparse.ArgumentParser()
 
@@ -233,7 +267,7 @@ def argumentParsing():
 		help="Path to XLS output file")
 
 	return parser.parse_args()
-	
+
 
 def main(args):
 	flies = extractFlies(args.db)
@@ -242,36 +276,47 @@ def main(args):
 	gliderCategorisedFlies = {}
 	siteCategorisedFlies = {}
 	countryCategorisedFlies = {}
+	tagsFlies = {}
+
 	for year in flies.keys():
-		# Country
+		print("=== Country ===")
 		countryCategorisedFlies[year] = classifyByCountry(flies[year])
-		print(year)
+		print("= %d =" % year)
 		for category, value in  countryCategorisedFlies[year].items():
 			print("%s\t%d\t%s" % (category, value["Times"], secondToTimeString(value["Duration"])))
 
-		# Site
+		print("=== Site ===")
 		siteCategorisedFlies[year] = classifyBySite(flies[year])
-		print(year)
+		print("= %d =" % year)
 		for category, value in  siteCategorisedFlies[year].items():
 			print("%s\t%d\t%s" % (category, value["Times"], secondToTimeString(value["Duration"])))
 
-		# Glider
+		print("=== Glider ===")
 		gliderCategorisedFlies[year] = classifyByGlider(flies[year])
-		print(year)
+		print("= %d =" % year)
 		for category, value in  gliderCategorisedFlies[year].items():
 			print("%s\t%d\t%s" % (category, value["Times"], secondToTimeString(value["Duration"])))
 
-		# Duration
+		print("=== Duration ===")
 		durationCategorisedFlies[year] = classifyByDurationCategories(flies[year])
-		print(year)
+		print("= %d =" % year)
 		for category, value in  durationCategorisedFlies[year].items():
 			print("%dh\t%d\t%s" % (category, value["Times"], secondToTimeString(value["Duration"])))
+
+		print("=== Tag ===")
+		tagsFlies[year] = classifyByTags(flies[year])
+		print("[*] %d" % len(tagsFlies))
+		print("= %d =" % year)
+		for category, value in tagsFlies[year].items():
+			print("%s\t%d\t%s" % (category, value["Times"], secondToTimeString(value["Duration"])))
+
 
 	with xlsxwriter.Workbook(args.output) as xlsFile:
 		exportDurationToXls(durationCategorisedFlies, xlsFile)
 		exportGliderToXls(gliderCategorisedFlies, xlsFile)
 		exportSiteToXls(siteCategorisedFlies, xlsFile)
 		exportCountryToXls(countryCategorisedFlies, xlsFile)
+		exportTagToXls(tagsFlies, xlsFile)
 
 
 if(__name__ == "__main__"):
