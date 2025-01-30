@@ -305,7 +305,6 @@ def main(args):
 
 		print("=== Tag ===")
 		tagsFlies[year] = classifyByTags(flies[year])
-		print("[*] %d" % len(tagsFlies))
 		print("= %d =" % year)
 		for category, value in tagsFlies[year].items():
 			print("%s\t%d\t%s" % (category, value["Times"], secondToTimeString(value["Duration"])))
